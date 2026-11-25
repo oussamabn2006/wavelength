@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS spotify.history_track_idx;

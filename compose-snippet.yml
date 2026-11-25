@@ -1,0 +1,15 @@
+# Add under services: in docker-compose.yml
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: spotify-web
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+      - minio
+    restart: unless-stopped
+
+# And in the backend service environment (so presigned URLs point at NGINX):
+#   MINIO_PUBLIC_ENDPOINT: "localhost:8080"

@@ -8,6 +8,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { api, ApiError } from '../services/api'
+import { useAuth } from './authStore'
+import { useLoginPrompt } from './loginPromptStore'
 import { useSession } from './sessionStore'
 import type { PlayEventAck, RepeatMode, Track } from '../types'
 
@@ -80,6 +82,10 @@ export const usePlayer = create<PlayerState>()(
       lastEvent: null,
 
       playQueue: (tracks, startIndex = 0, skipMissing = false) => {
+        if (!useAuth.getState().token) {
+          useLoginPrompt.getState().ask('play')
+          return
+        }
         if (tracks.length === 0) return
         history = []
         set({ queue: tracks })

@@ -5,7 +5,25 @@ import type {
   Subscription, TestCard, TopArtist, TopTrack, Track, TrackPlays, UploadResult, User,
 } from '../types'
 
+import { useAuth } from '../stores/authStore'
+import { useLoginPrompt } from '../stores/loginPromptStore'
+import type { LoginReason } from '../stores/loginPromptStore'
+
 const V1 = '/api/v1' // proxied to FastAPI by Vite (dev) and NGINX (production)
+
+/** Member-only actions: show the log-in dialog and stop when nobody is logged in. */
+function requireLogin(reason: LoginReason): void {
+  if (!useAuth.getState().token) {
+    useLoginPrompt.getState().ask(reason)
+    throw new ApiError(401, 'Log in to continue')
+  }
+}
+
+/** Per-user reads: with nobody logged in there is nothing to show (never another user's data). */
+const loggedIn = () => !!useAuth.getState().token
+function memberRead(): never {
+  throw new ApiError(401, 'Log in to continue')
+}
 
 export class ApiError extends Error {
   status: number
@@ -132,18 +150,25 @@ export const api = {
     data(v1<{ deleted: number }>(`/cache${qs({ reset_metrics: resetMetrics ? 'true' : undefined })}`, { method: 'DELETE' })),
 
   // ---- playlists (Cassandra) ----
-  userPlaylists: (userId: number) => data(v1<Playlist[]>(`/users/${userId}/playlists`)),
+  userPlaylists: async (userId: number): Promise<Playlist[]> =>
+    loggedIn() ? data(v1<Playlist[]>(`/users/${userId}/playlists`)) : [],
   getPlaylist: (id: string) => data(v1<PlaylistDetail>(`/playlists/${id}`)),
-  createPlaylist: (userId: number, name: string, description?: string) =>
-    data(v1<Playlist>(`/users/${userId}/playlists`, json('POST', { name, description: description || null }))),
-  addPlaylistTrack: (playlistId: string, trackId: number) =>
-    data(v1<{ track_position: number }>(`/playlists/${playlistId}/tracks`, json('POST', { track_id: trackId }))),
-  removePlaylistTrack: (playlistId: string, position: number) =>
-    data(v1<void>(`/playlists/${playlistId}/tracks/${position}`, { method: 'DELETE' })),
+  createPlaylist: async (userId: number, name: string, description?: string) => {
+    requireLogin('playlist')
+    return data(v1<Playlist>(`/users/${userId}/playlists`, json('POST', { name, description: description || null })))
+  },
+  addPlaylistTrack: async (playlistId: string, trackId: number) => {
+    requireLogin('playlist')
+    return data(v1<{ track_position: number }>(`/playlists/${playlistId}/tracks`, json('POST', { track_id: trackId })))
+  },
+  removePlaylistTrack: async (playlistId: string, position: number) => {
+    requireLogin('playlist')
+    return data(v1<void>(`/playlists/${playlistId}/tracks/${position}`, { method: 'DELETE' }))
+  },
 
   // ---- listening history (Cassandra) and the Kafka play pipeline ----
-  history: (userId: number, limit = 30, month?: string) =>
-    data(v1<HistoryItem[]>(`/users/${userId}/history${qs({ limit, month })}`)),
+  history: async (userId: number, limit = 30, month?: string): Promise<HistoryItem[]> =>
+    loggedIn() ? data(v1<HistoryItem[]>(`/users/${userId}/history${qs({ limit, month })}`)) : [],
   historyMeta: (userId: number, limit = 30, month?: string) =>
     v1<HistoryItem[]>(`/users/${userId}/history${qs({ limit, month })}`),
   logPlay: (userId: number, trackId: number, msPlayed?: number) =>
@@ -158,11 +183,15 @@ export const api = {
     data(v1<TrackPlays>(`/tracks/${trackId}/plays${qs({ month })}`)),
 
   // ---- users, plans, billing (PostgreSQL) ----
-  user: (id: number) => data(v1<User>(`/users/${id}`)),
+  user: (id: number) =>
+    !loggedIn() ? memberRead() : data(v1<User>(`/users/${id}`)),
   createUser: (body: NewUser) => data(v1<User>('/users', json('POST', body))),
-  subscription: (id: number) => data(v1<Subscription>(`/users/${id}/subscription`)),
-  subscriptions: (id: number, limit = 20) => data(v1<Subscription[]>(`/users/${id}/subscriptions${qs({ limit })}`)),
-  payments: (id: number, limit = 20) => data(v1<Payment[]>(`/users/${id}/payments${qs({ limit })}`)),
+  subscription: (id: number) =>
+    !loggedIn() ? memberRead() : data(v1<Subscription>(`/users/${id}/subscription`)),
+  subscriptions: (id: number, limit = 20) =>
+    !loggedIn() ? memberRead() : data(v1<Subscription[]>(`/users/${id}/subscriptions${qs({ limit })}`)),
+  payments: (id: number, limit = 20) =>
+    !loggedIn() ? memberRead() : data(v1<Payment[]>(`/users/${id}/payments${qs({ limit })}`)),
   plans: () => data(v1<Plan[]>('/plans')),
   subscribe: (id: number, planId: number, paymentMethodId: number | null, idempotencyKey: string) =>
     data(v1<ChangeResult>(`/users/${id}/subscribe`, {
@@ -170,9 +199,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ plan_id: planId, payment_method_id: paymentMethodId }),
     })),
-  billing: (id: number) => data(v1<BillingOverview>(`/users/${id}/billing`)),
+  billing: (id: number) =>
+    !loggedIn() ? memberRead() : data(v1<BillingOverview>(`/users/${id}/billing`)),
   quote: (id: number, planId: number) => data(v1<Quote>(`/users/${id}/billing/quote${qs({ plan_id: planId })}`)),
-  paymentMethods: (id: number) => data(v1<PaymentMethod[]>(`/users/${id}/payment-methods`)),
+  paymentMethods: (id: number) =>
+    !loggedIn() ? memberRead() : data(v1<PaymentMethod[]>(`/users/${id}/payment-methods`)),
   addPaymentMethod: (id: number, body: NewPaymentMethod) =>
     data(v1<PaymentMethod>(`/users/${id}/payment-methods`, json('POST', body))),
   setDefaultMethod: (id: number, methodId: number) =>

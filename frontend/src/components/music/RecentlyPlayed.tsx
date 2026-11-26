@@ -2,17 +2,19 @@ import { useQuery } from '@tanstack/react-query'
 import { Cover } from '../common/Cover'
 import { api } from '../../services/api'
 import { usePlayer } from '../../stores/playerStore'
+import { useAuth } from '../../stores/authStore'
 import { useSession } from '../../stores/sessionStore'
 
 /** A row of cards with the last distinct tracks the user played. Renders nothing when there is no history. */
 export function RecentlyPlayed() {
+  const token = useAuth((s) => s.token)
   const userId = useSession((s) => s.userId)
   const playQueue = usePlayer((s) => s.playQueue)
-  const q = useQuery({ queryKey: ['recent', userId], queryFn: () => api.history(userId, 40) })
+  const q = useQuery({ queryKey: ['recent', userId], queryFn: () => api.history(userId, 40), enabled: !!token })
 
   const seen = new Set<number>()
   const items = (q.data ?? []).filter((h) => (seen.has(h.track_id) ? false : (seen.add(h.track_id), true))).slice(0, 6)
-  if (items.length === 0) return null
+  if (!token || items.length === 0) return null
 
   return (
     <section className="mb-8">

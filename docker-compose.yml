@@ -156,6 +156,7 @@ services:
 
     environment:
       MINIO_PUBLIC_ENDPOINT: "localhost:8080"
+      AUTH_SECRET: "put-a-long-random-string-here"
 
     volumes:
       - ./app:/app/app

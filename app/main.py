@@ -16,7 +16,7 @@ from app.database import models  # noqa: F401  (registers tables on Base)
 from app.database import redis_cache as rc
 from app.database.postgres import Base, engine, get_db
 from app.database.sqlfiles import sql
-from app.routers import billing, cache, catalog, history, media, playlists, stats, users
+from app.routers import auth, billing, cache, catalog, history, media, playlists, stats, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Spotify Data Platform", version="0.8.0", lifespan=lifespan)
 
-for r in (catalog.router, users.router, billing.router, stats.router, history.router,
+for r in (auth.router, catalog.router, users.router, billing.router, stats.router, history.router,
           playlists.router, cache.router, media.router):
     app.include_router(r, prefix="/api/v1")
 

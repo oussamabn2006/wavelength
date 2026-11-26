@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Cover } from '../common/Cover'
 import { api } from '../../services/api'
 import { usePlayer } from '../../stores/playerStore'
+import { useAuth } from '../../stores/authStore'
 import { useSession } from '../../stores/sessionStore'
 import type { TopArtist, TopTrack } from '../../types'
 
@@ -16,7 +17,7 @@ async function trending(): Promise<{ tracks: TopTrack[]; artists: TopArtist[] }>
   const now = new Date()
   for (let i = 0; i < 4; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
     const [tracks, artists] = await Promise.all([api.topTracks(month, 10), api.topArtists(month, 8)])
     if (tracks.length > 0 || artists.length > 0) return { tracks, artists }
   }
@@ -35,13 +36,14 @@ function Row({ title, children }: { title: string; children: React.ReactNode }) 
 const card = 'rounded-lg bg-surface p-3 text-left transition hover:bg-surface-2'
 
 export function HomeSections() {
+  const token = useAuth((s) => s.token)
   const userId = useSession((s) => s.userId)
   const playQueue = usePlayer((s) => s.playQueue)
-  const playlists = useQuery({ queryKey: ['playlists', userId], queryFn: () => api.userPlaylists(userId) })
+  const playlists = useQuery({ queryKey: ['playlists', userId], queryFn: () => api.userPlaylists(userId), enabled: !!token })
   const trend = useQuery({ queryKey: ['trending'], queryFn: trending, staleTime: 300_000 })
   const albums = useQuery({ queryKey: ['featured-albums'], queryFn: () => api.searchAlbums('', 12), staleTime: 300_000 })
 
-  const quick = (playlists.data ?? []).slice(0, 6)
+  const quick = token ? (playlists.data ?? []).slice(0, 6) : []
 
   return (
     <div>
